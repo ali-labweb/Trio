@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply m-0 bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-200;
+    font-family: system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+}
+
+/* Leaflet overrides for mobile */
+.leaflet-container {
+  @apply rounded-xl;
+  z-index: 0 !important;
+}
+
+/* Smooth checkbox animation */
+.activity-done {
+  @apply line-through text-slate-400 dark:text-slate-500;
+}
