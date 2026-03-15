@@ -41,7 +41,7 @@ export default function TripPage() {
 
   const selectedDay = trip?.days.find((d) => d.id === selectedDayId);
 
-  // Fetch weather for selected day
+  // Fetch weather for selected day — use trip location (hotel) as fallback
   const loadWeather = useCallback(async () => {
     if (!trip || !selectedDay) return;
     // Skip if weather was fetched recently (6 hours)
@@ -49,12 +49,13 @@ export default function TripPage() {
       const fetchedAt = new Date(selectedDay.weather.fetchedAt).getTime();
       if (Date.now() - fetchedAt < 6 * 60 * 60 * 1000) return;
     }
-    // Find first activity with location
+    // Find location: first try activity with location, then fall back to trip location
     const locActivity = selectedDay.activities.find((a) => a.location);
-    if (!locActivity?.location) return;
-    const weather = await fetchWeather(locActivity.location.lat, locActivity.location.lng, selectedDay.date);
+    const loc = locActivity?.location || trip.location;
+    if (!loc) return;
+    const weather = await fetchWeather(loc.lat, loc.lng, selectedDay.date);
     if (weather) {
-      weather.locationName = locActivity.location.name;
+      weather.locationName = trip.hotelName || loc.name;
       updateDayWeather(trip.id, selectedDay.id, weather);
     }
   }, [trip, selectedDay, updateDayWeather]);
@@ -62,6 +63,21 @@ export default function TripPage() {
   useEffect(() => {
     loadWeather();
   }, [loadWeather]);
+
+  // Batch-fetch weather for all days using trip location
+  useEffect(() => {
+    if (!trip?.location) return;
+    const loc = trip.location;
+    trip.days.forEach((day) => {
+      if (day.weather) return; // already fetched
+      fetchWeather(loc.lat, loc.lng, day.date).then((w) => {
+        if (w) {
+          w.locationName = trip.hotelName || loc.name;
+          updateDayWeather(trip.id, day.id, w);
+        }
+      });
+    });
+  }, [trip?.id, trip?.location, trip?.days.length, updateDayWeather]);
 
   // Fetch travel times between consecutive activities
   const loadRoutes = useCallback(async () => {
@@ -125,6 +141,19 @@ export default function TripPage() {
         showBack
         rightAction={<ShareButton trip={trip} />}
       />
+
+      {/* Trip location info */}
+      {(trip.location || trip.hotelName) && (
+        <div className="px-4 pt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+          </svg>
+          {trip.hotelName && <span className="font-medium">{trip.hotelName}</span>}
+          {trip.hotelName && trip.location && <span>·</span>}
+          {trip.location && <span>{trip.location.name}{trip.location.address ? `, ${trip.location.address}` : ''}</span>}
+        </div>
+      )}
 
       {/* Progress */}
       {totalActivities > 0 && (

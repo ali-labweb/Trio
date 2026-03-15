@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Trip, Activity, Day } from '../types/itinerary';
+import type { Trip, Activity, Day, Location } from '../types/itinerary';
 import { generateId } from '../utils/id';
 import { getDaysBetween } from '../utils/dates';
 
 interface ItineraryState {
   trips: Trip[];
-  addTrip: (name: string, startDate: string, endDate: string) => string;
+  addTrip: (name: string, startDate: string, endDate: string, location?: Location, hotelName?: string) => string;
   importTrip: (trip: Trip) => void;
-  updateTrip: (id: string, updates: Partial<Pick<Trip, 'name' | 'startDate' | 'endDate'>>) => void;
+  updateTrip: (id: string, updates: Partial<Pick<Trip, 'name' | 'startDate' | 'endDate' | 'location' | 'hotelName'>>) => void;
   deleteTrip: (id: string) => void;
   addActivity: (tripId: string, dayId: string, activity: Omit<Activity, 'id'>) => void;
   updateActivity: (tripId: string, dayId: string, activityId: string, updates: Partial<Activity>) => void;
@@ -24,7 +24,7 @@ export const useItineraryStore = create<ItineraryState>()(
     (set) => ({
       trips: [],
 
-      addTrip: (name, startDate, endDate) => {
+      addTrip: (name, startDate, endDate, location?, hotelName?) => {
         const id = generateId();
         const dates = getDaysBetween(startDate, endDate);
         const days: Day[] = dates.map((date, i) => ({
@@ -39,6 +39,8 @@ export const useItineraryStore = create<ItineraryState>()(
           name,
           startDate,
           endDate,
+          location,
+          hotelName,
           days,
           createdAt: now,
           updatedAt: now,

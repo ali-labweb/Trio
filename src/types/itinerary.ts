@@ -58,6 +58,8 @@ export interface Trip {
   name: string;
   startDate: string;
   endDate: string;
+  location?: Location;
+  hotelName?: string;
   days: Day[];
   createdAt: string;
   updatedAt: string;

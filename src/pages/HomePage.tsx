@@ -6,8 +6,9 @@ import ImportModal from '../components/import/ImportModal';
 import { useItineraryStore } from '../store/useItineraryStore';
 import { useSettingsStore, formatTemp } from '../store/useSettingsStore';
 import { fetchWeather, getWeatherEmoji } from '../services/weather';
+import { geocodeLocation } from '../services/geocoding';
 import { toISODate, formatDate } from '../utils/dates';
-import type { WeatherInfo } from '../types/itinerary';
+import type { WeatherInfo, Location } from '../types/itinerary';
 
 // Generate a gradient based on trip name for the hero card
 function tripGradient(name: string): string {
@@ -37,6 +38,10 @@ export default function HomePage() {
   const [tripName, setTripName] = useState('');
   const [startDate, setStartDate] = useState(toISODate(new Date()));
   const [endDate, setEndDate] = useState('');
+  const [tripLocationName, setTripLocationName] = useState('');
+  const [tripLocation, setTripLocation] = useState<Location | undefined>();
+  const [hotelName, setHotelName] = useState('');
+  const [geocodingTrip, setGeocodingTrip] = useState(false);
   const [heroWeather, setHeroWeather] = useState<WeatherInfo | null>(null);
 
   const today = toISODate(new Date());
@@ -56,25 +61,40 @@ export default function HomePage() {
   const todayDay = activeTrip?.days.find((d) => d.date === today);
   const todayStops = todayDay?.activities.length || 0;
 
-  // Fetch weather for active trip's today location
+  // Fetch weather for active trip's today — use trip location as fallback
   useEffect(() => {
-    if (!todayDay) return;
-    if (todayDay.weather) {
+    if (!activeTrip) return;
+    if (todayDay?.weather) {
       setHeroWeather(todayDay.weather);
       return;
     }
-    const locActivity = todayDay.activities.find((a) => a.location);
-    if (!locActivity?.location) return;
-    fetchWeather(locActivity.location.lat, locActivity.location.lng, today).then((w) => {
-      if (w) setHeroWeather(w);
+    const locActivity = todayDay?.activities.find((a) => a.location);
+    const loc = locActivity?.location || activeTrip.location;
+    if (!loc) return;
+    fetchWeather(loc.lat, loc.lng, today).then((w) => {
+      if (w) {
+        w.locationName = activeTrip.hotelName || loc.name;
+        setHeroWeather(w);
+      }
     });
-  }, [todayDay, today]);
+  }, [todayDay, today, activeTrip]);
+
+  const handleLocationBlur = async () => {
+    if (!tripLocationName.trim() || tripLocationName === tripLocation?.name) return;
+    setGeocodingTrip(true);
+    const result = await geocodeLocation(tripLocationName);
+    if (result) setTripLocation(result);
+    setGeocodingTrip(false);
+  };
 
   const handleCreate = () => {
     if (!tripName.trim() || !startDate || !endDate) return;
-    const id = addTrip(tripName.trim(), startDate, endDate);
+    const id = addTrip(tripName.trim(), startDate, endDate, tripLocation, hotelName.trim() || undefined);
     setShowCreate(false);
     setTripName('');
+    setTripLocationName('');
+    setTripLocation(undefined);
+    setHotelName('');
     navigate(`/trip/${id}`);
   };
 
@@ -102,6 +122,15 @@ export default function HomePage() {
                 Current Trip
               </span>
               <h2 className="text-2xl font-bold leading-tight">{activeTrip.name}</h2>
+              {(activeTrip.location || activeTrip.hotelName) && (
+                <p className="text-sm text-white/80 mt-1 flex items-center gap-1.5">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                  </svg>
+                  {activeTrip.hotelName || activeTrip.location?.name}
+                </p>
+              )}
               <p className="text-sm text-white/80 mt-1 flex items-center gap-1.5">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25" />
@@ -269,6 +298,37 @@ export default function HomePage() {
                 placeholder="e.g., Hawaii Adventure 2026"
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-orange-500 outline-none"
                 autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Destination</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={tripLocationName}
+                  onChange={(e) => setTripLocationName(e.target.value)}
+                  onBlur={handleLocationBlur}
+                  placeholder="e.g., Kona, Hawaii"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-orange-500 outline-none"
+                />
+                {geocodingTrip && (
+                  <span className="absolute right-3 top-3 text-xs text-slate-400">Locating...</span>
+                )}
+              </div>
+              {tripLocation && (
+                <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                  📍 {tripLocation.name}{tripLocation.address ? `, ${tripLocation.address}` : ''}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Hotel / Accommodation</label>
+              <input
+                type="text"
+                value={hotelName}
+                onChange={(e) => setHotelName(e.target.value)}
+                placeholder="e.g., Four Seasons Resort Hualalai"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-orange-500 outline-none"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
