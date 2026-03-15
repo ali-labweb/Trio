@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import MobileShell from './components/layout/MobileShell';
 import HomePage from './pages/HomePage';
 import TripPage from './pages/TripPage';
@@ -20,7 +20,7 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <ThemeProvider>
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
           <Route element={<MobileShell />}>
             <Route path="/" element={<HomePage />} />
@@ -29,7 +29,7 @@ export default function App() {
           </Route>
           <Route path="/shared" element={<SharedTripPage />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </ThemeProvider>
   );
 }
