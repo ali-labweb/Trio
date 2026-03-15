@@ -70,11 +70,17 @@ export const useItineraryStore = create<ItineraryState>()(
               ? {
                   ...t,
                   updatedAt: new Date().toISOString(),
-                  days: t.days.map((d) =>
-                    d.id === dayId
-                      ? { ...d, activities: [...d.activities, { ...activity, id: generateId() }] }
-                      : d
-                  ),
+                  days: t.days.map((d) => {
+                    if (d.id !== dayId) return d;
+                    const newActivities = [...d.activities, { ...activity, id: generateId() }];
+                    newActivities.sort((a, b) => {
+                      if (!a.startTime && !b.startTime) return 0;
+                      if (!a.startTime) return -1;
+                      if (!b.startTime) return -1;
+                      return a.startTime.localeCompare(b.startTime);
+                    });
+                    return { ...d, activities: newActivities };
+                  }),
                 }
               : t
           ),
@@ -88,16 +94,19 @@ export const useItineraryStore = create<ItineraryState>()(
               ? {
                   ...t,
                   updatedAt: new Date().toISOString(),
-                  days: t.days.map((d) =>
-                    d.id === dayId
-                      ? {
-                          ...d,
-                          activities: d.activities.map((a) =>
-                            a.id === activityId ? { ...a, ...updates } : a
-                          ),
-                        }
-                      : d
-                  ),
+                  days: t.days.map((d) => {
+                    if (d.id !== dayId) return d;
+                    const activities = d.activities.map((a) =>
+                      a.id === activityId ? { ...a, ...updates } : a
+                    );
+                    activities.sort((a, b) => {
+                      if (!a.startTime && !b.startTime) return 0;
+                      if (!a.startTime) return -1;
+                      if (!b.startTime) return -1;
+                      return a.startTime.localeCompare(b.startTime);
+                    });
+                    return { ...d, activities };
+                  }),
                 }
               : t
           ),

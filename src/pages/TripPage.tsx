@@ -180,11 +180,19 @@ export default function TripPage() {
                 </p>
               </div>
             ) : (
-              selectedDay.activities.map((activity, idx) => (
+              [...selectedDay.activities]
+                .sort((a, b) => {
+                  // Activities with no time go to the top
+                  if (!a.startTime && !b.startTime) return 0;
+                  if (!a.startTime) return -1;
+                  if (!b.startTime) return -1;
+                  return a.startTime.localeCompare(b.startTime);
+                })
+                .map((activity, idx, sorted) => (
                 <ActivityCard
                   key={activity.id}
                   activity={activity}
-                  isLast={idx === selectedDay.activities.length - 1}
+                  isLast={idx === sorted.length - 1}
                   onToggle={() => toggleComplete(trip.id, selectedDayId, activity.id)}
                   onEdit={() => {
                     setEditingActivity(activity);
