@@ -3,7 +3,7 @@ import BottomNav from './BottomNav';
 
 export default function MobileShell() {
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-24">
       <Outlet />
       <BottomNav />
     </div>

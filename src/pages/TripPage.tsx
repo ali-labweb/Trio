@@ -4,7 +4,7 @@ import Header from '../components/layout/Header';
 import DayTab from '../components/trip/DayTab';
 import ActivityCard from '../components/activity/ActivityCard';
 import ActivityForm from '../components/activity/ActivityForm';
-import TravelSegment from '../components/activity/TravelSegment';
+// TravelSegment info is now shown inline in ActivityCard
 import DayMap from '../components/map/DayMap';
 import WeatherBadge from '../components/weather/WeatherBadge';
 import ShareButton from '../components/share/ShareButton';
@@ -180,21 +180,18 @@ export default function TripPage() {
                 </p>
               </div>
             ) : (
-              selectedDay.activities.map((activity) => (
-                <div key={activity.id}>
-                  {activity.travelFromPrevious && (
-                    <TravelSegment travel={activity.travelFromPrevious} />
-                  )}
-                  <ActivityCard
-                    activity={activity}
-                    onToggle={() => toggleComplete(trip.id, selectedDayId, activity.id)}
-                    onEdit={() => {
-                      setEditingActivity(activity);
-                      setShowForm(true);
-                    }}
-                    onDelete={() => handleDeleteActivity(activity.id)}
-                  />
-                </div>
+              selectedDay.activities.map((activity, idx) => (
+                <ActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  isLast={idx === selectedDay.activities.length - 1}
+                  onToggle={() => toggleComplete(trip.id, selectedDayId, activity.id)}
+                  onEdit={() => {
+                    setEditingActivity(activity);
+                    setShowForm(true);
+                  }}
+                  onDelete={() => handleDeleteActivity(activity.id)}
+                />
               ))
             )}
           </div>

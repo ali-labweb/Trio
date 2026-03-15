@@ -4,11 +4,13 @@ import MobileShell from './components/layout/MobileShell';
 import HomePage from './pages/HomePage';
 import TripPage from './pages/TripPage';
 import TodayPage from './pages/TodayPage';
+import MapPage from './pages/MapPage';
+import SettingsPage from './pages/SettingsPage';
 import SharedTripPage from './pages/SharedTripPage';
-import { useThemeStore } from './store/useThemeStore';
+import { useSettingsStore } from './store/useSettingsStore';
 
 function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const dark = useThemeStore((s) => s.dark);
+  const dark = useSettingsStore((s) => s.dark);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -26,6 +28,8 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/trip/:tripId" element={<TripPage />} />
             <Route path="/today" element={<TodayPage />} />
+            <Route path="/map" element={<MapPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
           <Route path="/shared" element={<SharedTripPage />} />
         </Routes>
