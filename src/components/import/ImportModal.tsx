@@ -27,7 +27,12 @@ const AI_PROMPT = `Generate a travel itinerary as a JSON object with this exact 
           "description": "Optional details or notes",
           "startTime": "HH:MM",
           "endTime": "HH:MM",
-          "category": "flight|transport|hotel|restaurant|activity|sightseeing|shopping|other"
+          "category": "flight|transport|hotel|restaurant|activity|sightseeing|shopping|other",
+          "location": {
+            "name": "Place Name",
+            "lat": 42.3601,
+            "lng": -71.0589
+          }
         }
       ]
     }
@@ -38,7 +43,8 @@ Rules:
 - Every day between startDate and endDate must have an entry in days[]
 - Times use 24-hour format (e.g., "09:00", "14:30")
 - category must be exactly one of: flight, transport, hotel, restaurant, activity, sightseeing, shopping, other
-- destination should be the city/region name (used for weather lookup)
+- IMPORTANT: Every activity MUST include a location object with name, lat (latitude), and lng (longitude). Use real coordinates for each place. This powers the trip map.
+- destination should be the primary city or region name (used for weather lookup)
 - hotel is the accommodation name displayed in the app
 - Each day should have a descriptive label (e.g., "Day 1 — Arrival", "Day 3 — Beach & Snorkeling")`;
 
@@ -61,10 +67,29 @@ export default function ImportModal({ onClose }: ImportModalProps) {
 
   const geocodeAndPreview = async (trip: Trip, rawText: string) => {
     if (tripName.trim()) trip.name = tripName.trim();
+    // Geocode trip destination
     const dest = getDestination(rawText);
     if (dest) {
       const loc = await geocodeLocation(dest);
       if (loc) trip.location = loc;
+    }
+    // Geocode any activities that have a title but no location coordinates
+    // (handles JSON without lat/lng — uses activity title + description as search query)
+    const activitiesNeedingGeocode = trip.days.flatMap((d) =>
+      d.activities.filter((a) => !a.location && a.category !== 'other' && a.category !== 'transport')
+    );
+    if (activitiesNeedingGeocode.length > 0) {
+      // Batch geocode in parallel, limit to avoid rate limiting
+      const batch = activitiesNeedingGeocode.slice(0, 20);
+      await Promise.all(
+        batch.map(async (activity) => {
+          const query = activity.title;
+          const loc = await geocodeLocation(query);
+          if (loc) {
+            activity.location = loc;
+          }
+        })
+      );
     }
     setPreview(trip);
   };

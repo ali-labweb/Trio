@@ -6,13 +6,20 @@ const VALID_CATEGORIES: ActivityCategory[] = [
   'flight', 'transport', 'hotel', 'restaurant', 'activity', 'sightseeing', 'shopping', 'other',
 ];
 
+interface RawLocation {
+  name?: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+}
+
 interface RawActivity {
   title?: string;
   description?: string;
   startTime?: string;
   endTime?: string;
   category?: string;
-  location?: string;
+  location?: RawLocation | string;
 }
 
 interface RawDay {
@@ -85,15 +92,31 @@ export function tryParseJson(text: string): Trip | null {
 
   const days: Day[] = allDates.map((date, i) => {
     const rd = rawDayMap.get(date);
-    const activities: Activity[] = (rd?.activities || []).map((a) => ({
-      id: generateId(),
-      title: a.title || 'Untitled',
-      description: a.description || undefined,
-      startTime: a.startTime || undefined,
-      endTime: a.endTime || undefined,
-      category: toCategory(a.category),
-      completed: false,
-    }));
+    const activities: Activity[] = (rd?.activities || []).map((a) => {
+      // Parse location — supports object with lat/lng or plain string
+      let location: Activity['location'] | undefined;
+      if (a.location && typeof a.location === 'object') {
+        const loc = a.location;
+        if (typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+          location = {
+            name: loc.name || a.title || 'Unknown',
+            address: loc.address,
+            lat: loc.lat,
+            lng: loc.lng,
+          };
+        }
+      }
+      return {
+        id: generateId(),
+        title: a.title || 'Untitled',
+        description: a.description || undefined,
+        startTime: a.startTime || undefined,
+        endTime: a.endTime || undefined,
+        category: toCategory(a.category),
+        location,
+        completed: false,
+      };
+    });
 
     return {
       id: generateId(),
