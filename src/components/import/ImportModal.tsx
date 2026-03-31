@@ -9,17 +9,52 @@ import { tryParseJson, getDestination } from './JsonParser';
 import { geocodeLocation } from '../../services/geocoding';
 import type { Trip } from '../../types/itinerary';
 
+const AI_PROMPT = `Generate a travel itinerary as a JSON object with this exact structure. Output ONLY the JSON, no other text:
+
+{
+  "name": "Trip Name",
+  "destination": "City, Country",
+  "hotel": "Hotel Name",
+  "startDate": "YYYY-MM-DD",
+  "endDate": "YYYY-MM-DD",
+  "days": [
+    {
+      "date": "YYYY-MM-DD",
+      "label": "Day 1 — Arrival",
+      "activities": [
+        {
+          "title": "Activity name",
+          "description": "Optional details or notes",
+          "startTime": "HH:MM",
+          "endTime": "HH:MM",
+          "category": "flight|transport|hotel|restaurant|activity|sightseeing|shopping|other"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Every day between startDate and endDate must have an entry in days[]
+- Times use 24-hour format (e.g., "09:00", "14:30")
+- category must be exactly one of: flight, transport, hotel, restaurant, activity, sightseeing, shopping, other
+- destination should be the city/region name (used for weather lookup)
+- hotel is the accommodation name displayed in the app
+- Each day should have a descriptive label (e.g., "Day 1 — Arrival", "Day 3 — Beach & Snorkeling")`;
+
 interface ImportModalProps {
   onClose: () => void;
 }
 
 export default function ImportModal({ onClose }: ImportModalProps) {
-  const [mode, setMode] = useState<'file' | 'paste'>('file');
+  const [mode, setMode] = useState<'file' | 'paste' | 'ai'>('ai');
   const [text, setText] = useState('');
   const [tripName, setTripName] = useState('');
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<Trip | null>(null);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [aiStep, setAiStep] = useState<'prompt' | 'paste'>('prompt');
   const fileRef = useRef<HTMLInputElement>(null);
   const importTrip = useItineraryStore((s) => s.importTrip);
   const navigate = useNavigate();
@@ -63,7 +98,6 @@ export default function ImportModal({ onClose }: ImportModalProps) {
         }
       } else {
         content = await file.text();
-        // Try JSON first, fall back to text parsing
         const jsonTrip = tryParseJson(content);
         if (jsonTrip) {
           await geocodeAndPreview(jsonTrip, content);
@@ -84,7 +118,6 @@ export default function ImportModal({ onClose }: ImportModalProps) {
     setLoading(true);
     setError('');
     try {
-      // Try JSON first, then fall back to text parsing
       const jsonTrip = tryParseJson(text);
       if (jsonTrip) {
         await geocodeAndPreview(jsonTrip, text);
@@ -96,6 +129,24 @@ export default function ImportModal({ onClose }: ImportModalProps) {
       setError('Failed to parse text.');
     }
     setLoading(false);
+  };
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(AI_PROMPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = AI_PROMPT;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const confirmImport = () => {
@@ -138,14 +189,14 @@ export default function ImportModal({ onClose }: ImportModalProps) {
 
             <div className="flex gap-2">
               <button
-                onClick={() => setMode('file')}
+                onClick={() => setMode('ai')}
                 className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
-                  mode === 'file'
-                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                  mode === 'ai'
+                    ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
                     : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                 }`}
               >
-                Upload File
+                AI Generate
               </button>
               <button
                 onClick={() => setMode('paste')}
@@ -155,11 +206,91 @@ export default function ImportModal({ onClose }: ImportModalProps) {
                     : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                 }`}
               >
-                Paste Text
+                Paste
+              </button>
+              <button
+                onClick={() => setMode('file')}
+                className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
+                  mode === 'file'
+                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Upload
               </button>
             </div>
 
-            {mode === 'file' ? (
+            {mode === 'ai' && aiStep === 'prompt' && (
+              <div className="space-y-3">
+                <div className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-xl p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">✨</span>
+                    <span className="text-sm font-semibold text-violet-800 dark:text-violet-200">Generate with AI</span>
+                  </div>
+                  <p className="text-xs text-violet-700 dark:text-violet-300 leading-relaxed">
+                    Copy this prompt and give it to Claude (or any AI) along with your trip details. Paste the JSON output back here to import.
+                  </p>
+                </div>
+
+                <div className="relative">
+                  <pre className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-700 dark:text-slate-300 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed font-mono">
+                    {AI_PROMPT}
+                  </pre>
+                  <button
+                    onClick={handleCopyPrompt}
+                    className="absolute top-2 right-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
+                  >
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+                  <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                    <span className="font-semibold">Tip:</span> Add your trip details after the prompt, e.g. <span className="italic">"Plan a 5-day trip to Tokyo, staying at Park Hyatt, from April 10-14, 2026. I like sushi, temples, and nightlife."</span>
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setAiStep('paste')}
+                  className="w-full py-2.5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <span>I have the AI output</span>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {mode === 'ai' && aiStep === 'paste' && (
+              <div className="space-y-3">
+                <button
+                  onClick={() => setAiStep('prompt')}
+                  className="text-xs text-violet-600 dark:text-violet-400 font-medium flex items-center gap-1 hover:underline"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                  </svg>
+                  Back to prompt
+                </button>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder='Paste the AI-generated JSON here...'
+                  rows={8}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-violet-500 outline-none resize-none text-sm font-mono"
+                />
+                <button
+                  onClick={handlePasteImport}
+                  disabled={!text.trim() || loading}
+                  className="w-full py-2.5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? 'Importing...' : 'Import Itinerary'}
+                </button>
+              </div>
+            )}
+
+            {mode === 'file' && (
               <div>
                 <input
                   ref={fileRef}
@@ -185,7 +316,9 @@ export default function ImportModal({ onClose }: ImportModalProps) {
                   )}
                 </button>
               </div>
-            ) : (
+            )}
+
+            {mode === 'paste' && (
               <div>
                 <textarea
                   value={text}
