@@ -197,7 +197,7 @@ export default function TripPage() {
           </div>
 
           {/* Map */}
-          <DayMap activities={selectedDay.activities} />
+          <DayMap activities={selectedDay.activities} tripLocation={trip.location} hotelName={trip.hotelName} />
 
           {/* Activities timeline */}
           <div className="px-4 space-y-1 pb-4">

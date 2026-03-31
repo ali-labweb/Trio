@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Activity } from '../../types/itinerary';
+import type { Activity, Location } from '../../types/itinerary';
 
 // Fix default marker icons in Leaflet with webpack/vite
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -34,15 +34,20 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
 
 interface DayMapProps {
   activities: Activity[];
+  tripLocation?: Location;
+  hotelName?: string;
 }
 
-export default function DayMap({ activities }: DayMapProps) {
+export default function DayMap({ activities, tripLocation, hotelName }: DayMapProps) {
   const [expanded, setExpanded] = useState(false);
   const locatedActivities = activities.filter((a) => a.location);
 
-  if (locatedActivities.length === 0) return null;
+  const hasTripFallback = locatedActivities.length === 0 && tripLocation;
+  if (locatedActivities.length === 0 && !tripLocation) return null;
 
-  const positions: [number, number][] = locatedActivities.map((a) => [a.location!.lat, a.location!.lng]);
+  const positions: [number, number][] = locatedActivities.length > 0
+    ? locatedActivities.map((a) => [a.location!.lat, a.location!.lng])
+    : [[tripLocation!.lat, tripLocation!.lng]];
   const center = positions[0];
 
   // Collect route geometries
@@ -59,7 +64,7 @@ export default function DayMap({ activities }: DayMapProps) {
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-400 mb-2"
       >
-        <span>🗺️ Map ({locatedActivities.length} locations)</span>
+        <span>🗺️ Map ({locatedActivities.length || 1} {locatedActivities.length === 0 ? 'location' : 'locations'})</span>
         <span>{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && (
@@ -70,6 +75,24 @@ export default function DayMap({ activities }: DayMapProps) {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             <FitBounds positions={positions} />
+            {hasTripFallback && tripLocation && (
+              <Marker
+                position={[tripLocation.lat, tripLocation.lng]}
+                icon={L.divIcon({
+                  className: 'custom-marker',
+                  html: `<div style="background:#f97316;color:white;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3)">📍</div>`,
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 16],
+                })}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <strong>{hotelName || tripLocation.name}</strong>
+                    {tripLocation.address && <><br />{tripLocation.address}</>}
+                  </div>
+                </Popup>
+              </Marker>
+            )}
             {locatedActivities.map((activity, i) => (
               <Marker
                 key={activity.id}

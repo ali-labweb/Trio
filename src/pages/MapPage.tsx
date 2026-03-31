@@ -55,7 +55,14 @@ export default function MapPage() {
     .filter((a) => a.travelFromPrevious?.routeGeometry)
     .map((a) => a.travelFromPrevious!.routeGeometry!);
 
-  const center: [number, number] = positions[0] || [20, 0];
+  // Use trip location as fallback when no activity locations exist
+  const tripLoc = activeTrip?.location;
+  const hasTripFallback = activities.length === 0 && tripLoc;
+  const allPositions: [number, number][] = hasTripFallback
+    ? [[tripLoc.lat, tripLoc.lng]]
+    : positions;
+  const center: [number, number] = allPositions[0] || [20, 0];
+  const hasMap = allPositions.length > 0;
 
   return (
     <div>
@@ -87,12 +94,12 @@ export default function MapPage() {
 
       {/* Map */}
       <div className="px-4 pb-4">
-        {activities.length === 0 ? (
+        {!hasMap ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">🗺️</div>
             <p className="text-sm text-slate-500 dark:text-slate-400">
               {activeTrip
-                ? 'No locations added yet. Add locations to activities to see them on the map.'
+                ? 'No locations added yet. Add a destination to your trip or locations to activities to see the map.'
                 : 'No trips yet. Create a trip to see your route.'}
             </p>
           </div>
@@ -103,7 +110,25 @@ export default function MapPage() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              <FitBounds positions={positions} />
+              <FitBounds positions={allPositions} />
+              {hasTripFallback && tripLoc && (
+                <Marker
+                  position={[tripLoc.lat, tripLoc.lng]}
+                  icon={L.divIcon({
+                    className: 'custom-marker',
+                    html: `<div style="background:#f97316;color:white;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3)">📍</div>`,
+                    iconSize: [36, 36],
+                    iconAnchor: [18, 18],
+                  })}
+                >
+                  <Popup>
+                    <div className="text-sm">
+                      <strong>{activeTrip?.hotelName || tripLoc.name}</strong>
+                      {tripLoc.address && <><br />{tripLoc.address}</>}
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
               {activities.map((activity, i) => (
                 <Marker
                   key={activity.id}
