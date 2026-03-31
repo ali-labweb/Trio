@@ -5,6 +5,8 @@ import { extractTextFromPdf } from '../../services/pdfExtract';
 import { parseItineraryText } from './TextParser';
 import { parseCsvItinerary } from './CsvParser';
 import { parseIcsItinerary } from './IcsParser';
+import { tryParseJson, getDestination } from './JsonParser';
+import { geocodeLocation } from '../../services/geocoding';
 import type { Trip } from '../../types/itinerary';
 
 interface ImportModalProps {
@@ -21,6 +23,16 @@ export default function ImportModal({ onClose }: ImportModalProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const importTrip = useItineraryStore((s) => s.importTrip);
   const navigate = useNavigate();
+
+  const geocodeAndPreview = async (trip: Trip, rawText: string) => {
+    if (tripName.trim()) trip.name = tripName.trim();
+    const dest = getDestination(rawText);
+    if (dest) {
+      const loc = await geocodeLocation(dest);
+      if (loc) trip.location = loc;
+    }
+    setPreview(trip);
+  };
 
   const handleFile = async (file: File) => {
     setLoading(true);
@@ -41,10 +53,24 @@ export default function ImportModal({ onClose }: ImportModalProps) {
         content = await file.text();
         const trip = parseIcsItinerary(content, tripName || file.name.replace(/\.ics$/i, ''));
         setPreview(trip);
+      } else if (ext === 'json') {
+        content = await file.text();
+        const trip = tryParseJson(content);
+        if (trip) {
+          await geocodeAndPreview(trip, content);
+        } else {
+          setError('Invalid JSON itinerary format.');
+        }
       } else {
         content = await file.text();
-        const trip = parseItineraryText(content, tripName || file.name.replace(/\.\w+$/i, ''));
-        setPreview(trip);
+        // Try JSON first, fall back to text parsing
+        const jsonTrip = tryParseJson(content);
+        if (jsonTrip) {
+          await geocodeAndPreview(jsonTrip, content);
+        } else {
+          const trip = parseItineraryText(content, tripName || file.name.replace(/\.\w+$/i, ''));
+          setPreview(trip);
+        }
       }
     } catch (err) {
       setError('Failed to parse file. Please try a different format.');
@@ -53,14 +79,23 @@ export default function ImportModal({ onClose }: ImportModalProps) {
     setLoading(false);
   };
 
-  const handlePasteImport = () => {
+  const handlePasteImport = async () => {
     if (!text.trim()) return;
+    setLoading(true);
+    setError('');
     try {
-      const trip = parseItineraryText(text, tripName || 'Imported Trip');
-      setPreview(trip);
+      // Try JSON first, then fall back to text parsing
+      const jsonTrip = tryParseJson(text);
+      if (jsonTrip) {
+        await geocodeAndPreview(jsonTrip, text);
+      } else {
+        const trip = parseItineraryText(text, tripName || 'Imported Trip');
+        setPreview(trip);
+      }
     } catch {
       setError('Failed to parse text.');
     }
+    setLoading(false);
   };
 
   const confirmImport = () => {
@@ -129,7 +164,7 @@ export default function ImportModal({ onClose }: ImportModalProps) {
                 <input
                   ref={fileRef}
                   type="file"
-                  accept=".pdf,.txt,.csv,.ics,.text"
+                  accept=".pdf,.txt,.csv,.ics,.json,.text"
                   onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
                   className="hidden"
                 />
@@ -145,7 +180,7 @@ export default function ImportModal({ onClose }: ImportModalProps) {
                       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                       </svg>
-                      <span className="text-sm">Tap to upload PDF, TXT, CSV, or ICS</span>
+                      <span className="text-sm">Tap to upload PDF, TXT, CSV, ICS, or JSON</span>
                     </span>
                   )}
                 </button>
@@ -155,16 +190,16 @@ export default function ImportModal({ onClose }: ImportModalProps) {
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="Paste your itinerary here..."
+                  placeholder="Paste your itinerary text or JSON here..."
                   rows={8}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none resize-none text-sm"
                 />
                 <button
                   onClick={handlePasteImport}
-                  disabled={!text.trim()}
+                  disabled={!text.trim() || loading}
                   className="w-full mt-2 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  Parse Text
+                  {loading ? 'Parsing...' : 'Parse Text'}
                 </button>
               </div>
             )}
@@ -178,6 +213,8 @@ export default function ImportModal({ onClose }: ImportModalProps) {
             <h3 className="font-medium">Preview: {preview.name}</h3>
             <p className="text-sm text-slate-500">
               {preview.days.length} days · {preview.days.reduce((s, d) => s + d.activities.length, 0)} activities parsed
+              {preview.hotelName && ` · ${preview.hotelName}`}
+              {preview.location && ` · ${preview.location.name}`}
             </p>
             <div className="max-h-60 overflow-y-auto space-y-2">
               {preview.days.map((day) => (
