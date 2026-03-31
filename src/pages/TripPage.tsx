@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import DayTab from '../components/trip/DayTab';
@@ -6,13 +6,162 @@ import ActivityCard from '../components/activity/ActivityCard';
 import ActivityForm from '../components/activity/ActivityForm';
 // TravelSegment info is now shown inline in ActivityCard
 import DayMap from '../components/map/DayMap';
-import WeatherBadge from '../components/weather/WeatherBadge';
+import WeatherCard from '../components/weather/WeatherCard';
 import ShareButton from '../components/share/ShareButton';
 import { useItineraryStore } from '../store/useItineraryStore';
+import { useSettingsStore, formatDist } from '../store/useSettingsStore';
 import { fetchWeather } from '../services/weather';
 import { fetchRoute } from '../services/routing';
-import { formatDateLong } from '../utils/dates';
-import type { Activity } from '../types/itinerary';
+import { formatDateLong, toISODate } from '../utils/dates';
+import type { Activity, Day } from '../types/itinerary';
+
+/** Compute now/next highlight for today's activities */
+function computeHighlights(activities: Activity[], isToday: boolean): Map<string, 'now' | 'next'> {
+  const map = new Map<string, 'now' | 'next'>();
+  if (!isToday) return map;
+
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  let foundNow = false;
+  const sorted = [...activities]
+    .filter((a) => !a.completed && a.startTime)
+    .sort((a, b) => a.startTime!.localeCompare(b.startTime!));
+
+  for (const act of sorted) {
+    const [h, m] = act.startTime!.split(':').map(Number);
+    const startMin = h * 60 + m;
+    let endMin = startMin + 60; // default 1hr
+    if (act.endTime) {
+      const [eh, em] = act.endTime.split(':').map(Number);
+      endMin = eh * 60 + em;
+    }
+
+    if (currentMinutes >= startMin && currentMinutes < endMin) {
+      map.set(act.id, 'now');
+      foundNow = true;
+    } else if (currentMinutes < startMin && !map.has(act.id)) {
+      map.set(act.id, foundNow ? 'next' : 'next');
+      break; // only mark the first upcoming
+    }
+  }
+
+  // If no "now" found, find the first upcoming
+  if (!foundNow && map.size === 0) {
+    for (const act of sorted) {
+      const [h, m] = act.startTime!.split(':').map(Number);
+      if (h * 60 + m > currentMinutes) {
+        map.set(act.id, 'next');
+        break;
+      }
+    }
+  }
+
+  return map;
+}
+
+/** Sub-component: Day activities list with collapsible completed + travel segments */
+function DayActivities({
+  selectedDay,
+  today,
+  useMiles,
+  showForm,
+  tripId,
+  selectedDayId,
+  toggleComplete,
+  onEdit,
+  onDelete,
+}: {
+  selectedDay: Day;
+  today: string;
+  useMiles: boolean;
+  showForm: boolean;
+  tripId: string;
+  selectedDayId: string;
+  toggleComplete: (tripId: string, dayId: string, activityId: string) => void;
+  onEdit: (activity: Activity) => void;
+  onDelete: (activityId: string) => void;
+}) {
+  const isToday = selectedDay.date === today;
+  const sorted = useMemo(
+    () =>
+      [...selectedDay.activities].sort((a, b) => {
+        if (!a.startTime && !b.startTime) return 0;
+        if (!a.startTime) return -1;
+        if (!b.startTime) return -1;
+        return a.startTime.localeCompare(b.startTime);
+      }),
+    [selectedDay.activities]
+  );
+
+  const completed = sorted.filter((a) => a.completed);
+  const upcoming = sorted.filter((a) => !a.completed);
+  const highlights = useMemo(() => computeHighlights(sorted, isToday), [sorted, isToday]);
+
+  if (selectedDay.activities.length === 0 && !showForm) {
+    return (
+      <div className="px-4 pb-4">
+        <div className="text-center py-12">
+          <div className="text-4xl mb-3">📝</div>
+          <p className="text-sm text-slate-500 dark:text-slate-400">No activities for this day</p>
+        </div>
+      </div>
+    );
+  }
+
+  const renderActivity = (activity: Activity, idx: number, arr: Activity[]) => (
+    <div key={activity.id}>
+      {/* Travel segment between cards */}
+      {activity.travelFromPrevious && (
+        <div className="flex items-center gap-2 pl-[76px] py-1.5">
+          <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            {activity.travelFromPrevious.mode === 'walking' ? (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0H18.75a1.125 1.125 0 0 0 1.125-1.125V11.25" />
+            )}
+          </svg>
+          <span className="text-xs text-slate-400">
+            {activity.travelFromPrevious.durationMinutes} min · {formatDist(activity.travelFromPrevious.distanceKm, useMiles)}
+          </span>
+        </div>
+      )}
+      <ActivityCard
+        activity={activity}
+        isLast={idx === arr.length - 1}
+        highlight={highlights.get(activity.id)}
+        onToggle={() => toggleComplete(tripId, selectedDayId, activity.id)}
+        onEdit={() => onEdit(activity)}
+        onDelete={() => onDelete(activity.id)}
+      />
+    </div>
+  );
+
+  return (
+    <div className="px-4 space-y-1 pb-4">
+      {/* Collapsible completed section */}
+      {completed.length > 0 && upcoming.length > 0 && (
+        <details className="mb-2">
+          <summary className="text-xs text-slate-400 dark:text-slate-500 cursor-pointer py-2 flex items-center gap-1.5 select-none">
+            <span className="text-green-500">✓</span>
+            <span>{completed.length} completed</span>
+          </summary>
+          <div className="opacity-50">
+            {completed.map((act, idx) => renderActivity(act, idx, completed))}
+          </div>
+        </details>
+      )}
+
+      {/* If all completed (nothing upcoming), show them all normally */}
+      {upcoming.length === 0 && completed.length > 0 && (
+        completed.map((act, idx) => renderActivity(act, idx, completed))
+      )}
+
+      {/* Upcoming activities */}
+      {upcoming.map((act, idx) => renderActivity(act, idx, upcoming))}
+    </div>
+  );
+}
 
 export default function TripPage() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -25,10 +174,13 @@ export default function TripPage() {
   const updateDayWeather = useItineraryStore((s) => s.updateDayWeather);
   const updateActivityTravel = useItineraryStore((s) => s.updateActivityTravel);
 
+  const useMiles = useSettingsStore((s) => s.useMiles);
+
   const trip = trips.find((t) => t.id === tripId);
   const [selectedDayId, setSelectedDayId] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | undefined>();
+  const today = toISODate(new Date());
 
   useEffect(() => {
     if (trip && !selectedDayId) {
@@ -183,55 +335,58 @@ export default function TripPage() {
 
       {selectedDay && (
         <>
-          {/* Day header with weather */}
-          <div className="px-4 pb-2 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                {formatDateLong(selectedDay.date)}
-              </p>
-              {selectedDay.label && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">{selectedDay.label}</p>
-              )}
-            </div>
-            {selectedDay.weather && <WeatherBadge weather={selectedDay.weather} />}
+          {/* Day header */}
+          <div className="px-4 pb-1">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              {formatDateLong(selectedDay.date)}
+            </p>
+            {selectedDay.label && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">{selectedDay.label}</p>
+            )}
           </div>
+
+          {/* Day progress dots */}
+          {selectedDay.activities.length > 0 && (
+            <div className="px-4 pb-2 flex items-center gap-2">
+              <div className="flex gap-1">
+                {selectedDay.activities.map((a) => (
+                  <div
+                    key={a.id}
+                    className={`w-2 h-2 rounded-full ${a.completed ? 'bg-green-500' : 'bg-slate-200 dark:bg-slate-600'}`}
+                  />
+                ))}
+              </div>
+              <span className="text-xs text-slate-400">
+                {selectedDay.activities.filter((a) => a.completed).length}/{selectedDay.activities.length} done
+              </span>
+            </div>
+          )}
+
+          {/* Weather card */}
+          {selectedDay.weather && (
+            <div className="px-4 pb-3">
+              <WeatherCard weather={selectedDay.weather} />
+            </div>
+          )}
 
           {/* Map */}
           <DayMap activities={selectedDay.activities} tripLocation={trip.location} hotelName={trip.hotelName} />
 
           {/* Activities timeline */}
-          <div className="px-4 space-y-1 pb-4">
-            {selectedDay.activities.length === 0 && !showForm ? (
-              <div className="text-center py-12">
-                <div className="text-4xl mb-3">📝</div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  No activities for this day
-                </p>
-              </div>
-            ) : (
-              [...selectedDay.activities]
-                .sort((a, b) => {
-                  // Activities with no time go to the top
-                  if (!a.startTime && !b.startTime) return 0;
-                  if (!a.startTime) return -1;
-                  if (!b.startTime) return -1;
-                  return a.startTime.localeCompare(b.startTime);
-                })
-                .map((activity, idx, sorted) => (
-                <ActivityCard
-                  key={activity.id}
-                  activity={activity}
-                  isLast={idx === sorted.length - 1}
-                  onToggle={() => toggleComplete(trip.id, selectedDayId, activity.id)}
-                  onEdit={() => {
-                    setEditingActivity(activity);
-                    setShowForm(true);
-                  }}
-                  onDelete={() => handleDeleteActivity(activity.id)}
-                />
-              ))
-            )}
-          </div>
+          <DayActivities
+            selectedDay={selectedDay}
+            today={today}
+            useMiles={useMiles}
+            showForm={showForm}
+            tripId={trip.id}
+            selectedDayId={selectedDayId}
+            toggleComplete={toggleComplete}
+            onEdit={(activity) => {
+              setEditingActivity(activity);
+              setShowForm(true);
+            }}
+            onDelete={handleDeleteActivity}
+          />
 
           {/* Add activity button */}
           {!showForm && (

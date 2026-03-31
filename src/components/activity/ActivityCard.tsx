@@ -8,9 +8,10 @@ interface ActivityCardProps {
   onEdit: () => void;
   onDelete: () => void;
   isLast?: boolean;
+  highlight?: 'now' | 'next';
 }
 
-export default function ActivityCard({ activity, onToggle, onEdit, onDelete, isLast = false }: ActivityCardProps) {
+export default function ActivityCard({ activity, onToggle, onEdit, onDelete, isLast = false, highlight }: ActivityCardProps) {
   const style = getCategoryStyle(activity.category);
 
   const duration = activity.startTime && activity.endTime
@@ -62,6 +63,10 @@ export default function ActivityCard({ activity, onToggle, onEdit, onDelete, isL
             activity.completed
               ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-60'
               : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm'
+          } ${
+            highlight === 'now' ? 'border-l-4 border-l-blue-500' : ''
+          } ${
+            highlight === 'next' ? 'border-l-4 border-l-orange-400' : ''
           }`}
         >
           <div className="flex items-start gap-3">
@@ -75,19 +80,31 @@ export default function ActivityCard({ activity, onToggle, onEdit, onDelete, isL
 
             {/* Content */}
             <div className="flex-1 min-w-0">
-              <h4 className={`text-sm font-semibold ${
-                activity.completed
-                  ? 'line-through text-slate-400 dark:text-slate-500'
-                  : 'text-slate-800 dark:text-slate-200'
-              }`}>
-                {activity.title}
-              </h4>
-              {(duration || activity.travelFromPrevious) && (
+              <div className="flex items-center gap-2">
+                <h4 className={`text-sm font-semibold ${
+                  activity.completed
+                    ? 'line-through text-slate-400 dark:text-slate-500'
+                    : 'text-slate-800 dark:text-slate-200'
+                }`}>
+                  {activity.title}
+                </h4>
+                {highlight === 'now' && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                    Now
+                  </span>
+                )}
+                {highlight === 'next' && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                    Up next
+                  </span>
+                )}
+              </div>
+              {duration && (
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                   </svg>
-                  {duration || (activity.travelFromPrevious && `${activity.travelFromPrevious.durationMinutes} min drive`)}
+                  {duration}
                 </p>
               )}
               {activity.description && (
