@@ -1,13 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Trip, Activity, Day, Location } from '../types/itinerary';
+import { createSampleTrip } from '../data/sampleTrip';
 import { generateId } from '../utils/id';
 import { getDaysBetween } from '../utils/dates';
 
 interface ItineraryState {
   trips: Trip[];
+  _seeded?: boolean;
   addTrip: (name: string, startDate: string, endDate: string, location?: Location, hotelName?: string) => string;
   importTrip: (trip: Trip) => void;
+  mergeTrips: (incoming: Trip[]) => { added: number; updated: number };
   updateTrip: (id: string, updates: Partial<Pick<Trip, 'name' | 'startDate' | 'endDate' | 'location' | 'hotelName'>>) => void;
   deleteTrip: (id: string) => void;
   addActivity: (tripId: string, dayId: string, activity: Omit<Activity, 'id'>) => void;
@@ -51,6 +54,26 @@ export const useItineraryStore = create<ItineraryState>()(
 
       importTrip: (trip) => {
         set((state) => ({ trips: [...state.trips, trip] }));
+      },
+
+      mergeTrips: (incoming) => {
+        let added = 0;
+        let updated = 0;
+        set((state) => {
+          const tripMap = new Map(state.trips.map((t) => [t.id, t]));
+          for (const trip of incoming) {
+            const existing = tripMap.get(trip.id);
+            if (!existing) {
+              tripMap.set(trip.id, trip);
+              added++;
+            } else if (trip.updatedAt > existing.updatedAt) {
+              tripMap.set(trip.id, trip);
+              updated++;
+            }
+          }
+          return { trips: [...tripMap.values()] };
+        });
+        return { added, updated };
       },
 
       updateTrip: (id, updates) => {
@@ -212,6 +235,14 @@ export const useItineraryStore = create<ItineraryState>()(
     }),
     {
       name: 'travel-companion-storage',
+      onRehydrateStorage: () => (state) => {
+        // Seed sample trip on very first load (no trips and never seeded)
+        if (state && state.trips.length === 0 && !state._seeded) {
+          const sample = createSampleTrip();
+          state.trips = [sample];
+          state._seeded = true;
+        }
+      },
     }
   )
 );
